@@ -78,10 +78,12 @@ function GravityController({
   targetGravity,
   isReady,
   controlsEnabled,
+  transitionPhase,
 }: {
   targetGravity: MutableRefObject<THREE.Vector3>;
   isReady: boolean;
   controlsEnabled: boolean;
+  transitionPhase: TransitionPhase;
 }) {
   const { world } = useRapier();
   
@@ -90,9 +92,10 @@ function GravityController({
     if (!controlsEnabled) {
       targetGravity.current.set(0, -30, 0);
     }
-    world.gravity.x = THREE.MathUtils.lerp(world.gravity.x, targetGravity.current.x, 0.05);
-    world.gravity.y = THREE.MathUtils.lerp(world.gravity.y, targetGravity.current.y, 0.05);
-    world.gravity.z = THREE.MathUtils.lerp(world.gravity.z, targetGravity.current.z, 0.05);
+    const lerpFactor = transitionPhase === 'idle' ? 0.15 : 0.1;
+    world.gravity.x = THREE.MathUtils.lerp(world.gravity.x, targetGravity.current.x, lerpFactor);
+    world.gravity.y = THREE.MathUtils.lerp(world.gravity.y, targetGravity.current.y, lerpFactor);
+    world.gravity.z = THREE.MathUtils.lerp(world.gravity.z, targetGravity.current.z, lerpFactor);
   });
   
   return null;
@@ -129,7 +132,7 @@ function SceneContent({
   onCompleteTransition: () => void;
   nextMazeOffset: [number, number];
 }) {
-  const { camera, size } = useThree();
+  const { camera } = useThree();
   const targetGravity = useRef<THREE.Vector3>(new THREE.Vector3(0, -30, 0));
   const activeBoardRef = useRef<THREE.Group>(null);
   const nextBoardRef = useRef<THREE.Group>(null);
@@ -139,6 +142,7 @@ function SceneContent({
   const handoffStartedRef = useRef(false);
   const lastActiveMazePath = useRef(activeMaze.path);
   const lookTarget = useRef(new THREE.Vector3(0, 0, 0));
+  const lightRef = useRef<THREE.DirectionalLight>(null);
 
   useEffect(() => {
     camera.up.set(0, 0, -1);
@@ -219,11 +223,11 @@ function SceneContent({
       const velocity = ball.linvel();
 
       if (transitionPhase === 'falling') {
-        const steer = 0.06;
+        const steer = 0.08;
         const nextX = THREE.MathUtils.lerp(current.x, transitionTarget[0], steer);
         const nextZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], steer);
         ball.setTranslation({ x: nextX, y: current.y, z: nextZ }, true);
-        ball.setLinvel({ x: 0, y: Math.min(velocity.y, -8), z: 0 }, true);
+        ball.setLinvel({ x: 0, y: Math.min(velocity.y, -10), z: 0 }, true);
 
         if (!handoffStartedRef.current && current.y <= transitionTarget[1] + 2.5) {
           handoffStartedRef.current = true;
@@ -232,12 +236,12 @@ function SceneContent({
       }
 
       if (transitionPhase === 'handoff') {
-        const handoffSteer = 0.12;
+        const handoffSteer = 0.15;
         const steerX = THREE.MathUtils.lerp(current.x, transitionTarget[0], handoffSteer);
         const steerZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], handoffSteer);
         ball.setTranslation({ x: steerX, y: current.y, z: steerZ }, true);
-        const nearLanding = current.y <= transitionTarget[1] + 0.65;
-        const stable = Math.abs(velocity.y) <= 1.2;
+        const nearLanding = current.y <= transitionTarget[1] + 0.55;
+        const stable = Math.abs(velocity.y) <= 2.5;
         if (!transitionHandledRef.current && nearLanding && stable) {
           transitionHandledRef.current = true;
           ball.setTranslation({ x: transitionTarget[0], y: transitionTarget[1], z: transitionTarget[2] }, true);
@@ -261,12 +265,19 @@ function SceneContent({
     
     lookTarget.current.set(lookX, lookY, lookZ);
     camera.lookAt(lookTarget.current);
+
+    if (lightRef.current) {
+      lightRef.current.position.set(lookX + 15, lookY + 25, lookZ + 15);
+      lightRef.current.target.position.set(lookX, lookY, lookZ);
+      lightRef.current.target.updateMatrixWorld();
+    }
   });
 
   return (
     <>
        <ambientLight intensity={1.0} />
        <directionalLight 
+         ref={lightRef}
          position={[15, 25, 15]} 
          intensity={1.5} 
          castShadow 
@@ -282,7 +293,12 @@ function SceneContent({
        <pointLight position={[-15, 15, -15]} intensity={1.0} />
 
       <Physics key={isReady ? 'active' : 'inactive'}>
-        <GravityController targetGravity={targetGravity} isReady={isReady} controlsEnabled={controlsEnabled && !isFailed} />
+        <GravityController 
+          targetGravity={targetGravity} 
+          isReady={isReady} 
+          controlsEnabled={controlsEnabled && !isFailed} 
+          transitionPhase={transitionPhase}
+        />
          <Suspense fallback={null}>
           <group ref={activeBoardRef}>
             <Maze map={activeMaze.map} mazeId={activeMaze.id} onPortalEnter={onPortalEnter} onFail={onFail} />
@@ -291,7 +307,7 @@ function SceneContent({
                 key={ballKey} 
                 ref={ballRef} 
                 position={ballSpawnPosition} 
-                restitution={transitionPhase === 'idle' ? 0 : 0.6} 
+                restitution={transitionPhase === 'idle' ? 0 : (transitionPhase === 'handoff' ? 0 : 0.6)} 
               />
             )}
            </group>
