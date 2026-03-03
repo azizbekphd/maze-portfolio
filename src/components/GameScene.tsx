@@ -1,20 +1,95 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Physics, useRapier } from '@react-three/rapier';
+import { Physics, RapierRigidBody, useRapier } from '@react-three/rapier';
 import { useState, useEffect, useRef, Suspense, useCallback, useMemo } from 'react';
+import type { MutableRefObject } from 'react';
 import { Maze } from './Maze';
 import { Ball } from './Ball';
 import * as THREE from 'three';
 import { EffectComposer, Bloom, Noise, Vignette } from '@react-three/postprocessing';
+import { level1, level2, levelSkills, levelContact } from '../levels';
+import { generateMaze } from '../utils/mazeGenerator';
+
+/* eslint-disable react-hooks/immutability */
 
 const isMobile = typeof window !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+const DROP_DISTANCE = 30;
+const CAMERA_HEIGHT = 20;
+
+type MazeId = 'home' | 'projects' | 'skills' | 'contact' | 'endless';
+type TransitionPhase = 'idle' | 'falling' | 'handoff';
+
+interface MazeDescriptor {
+  id: MazeId;
+  path: string;
+  map: number[][];
+}
+
+function randomSeed() {
+  return Math.random().toString(36).substring(7);
+}
+
+function mazeFromPath(path: string): MazeDescriptor {
+  if (path === '/projects') return { id: 'projects', path, map: level2 };
+  if (path === '/skills') return { id: 'skills', path, map: levelSkills };
+  if (path === '/contact') return { id: 'contact', path, map: levelContact };
+
+  const endlessMatch = path.match(/^\/endless\/([^/]+)$/);
+  if (endlessMatch) {
+    const seed = endlessMatch[1];
+    return {
+      id: 'endless',
+      path: `/endless/${seed}`,
+      map: generateMaze(seed, 15),
+    };
+  }
+
+  return { id: 'home', path: '/', map: level1 };
+}
+
+function mazeFromDestination(destinationId: string): MazeDescriptor {
+  if (destinationId === 'endless') {
+    const seed = randomSeed();
+    return {
+      id: 'endless',
+      path: `/endless/${seed}`,
+      map: generateMaze(seed, 15),
+    };
+  }
+
+  const normalized = destinationId === 'home' ? '/' : `/${destinationId}`;
+  return mazeFromPath(normalized);
+}
+
+function getStartPosition(map: number[][], yOffset = 0): [number, number, number] {
+  const width = map[0].length;
+  const height = map.length;
+  for (let z = 0; z < height; z++) {
+    for (let x = 0; x < width; x++) {
+      if (map[z][x] === 9) {
+        return [(x - width / 2) + 0.5, yOffset + 0.5, (z - height / 2) + 0.5];
+      }
+    }
+  }
+  return [0, yOffset + 0.5, 0];
+}
 
 // Separate component to handle gravity updates directly on the physics world
-function GravityController({ targetGravity, isReady }: { targetGravity: React.MutableRefObject<THREE.Vector3>, isReady: boolean }) {
+function GravityController({
+  targetGravity,
+  isReady,
+  controlsEnabled,
+}: {
+  targetGravity: MutableRefObject<THREE.Vector3>;
+  isReady: boolean;
+  controlsEnabled: boolean;
+}) {
   const { world } = useRapier();
   
   useFrame(() => {
     if (!isReady) return;
-    // Mutate world gravity directly to avoid React re-renders
+    if (!controlsEnabled) {
+      targetGravity.current.set(0, -30, 0);
+    }
     world.gravity.x = THREE.MathUtils.lerp(world.gravity.x, targetGravity.current.x, 0.05);
     world.gravity.y = THREE.MathUtils.lerp(world.gravity.y, targetGravity.current.y, 0.05);
     world.gravity.z = THREE.MathUtils.lerp(world.gravity.z, targetGravity.current.z, 0.05);
@@ -23,37 +98,51 @@ function GravityController({ targetGravity, isReady }: { targetGravity: React.Mu
   return null;
 }
 
-function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], onNavigate: (path: string) => void, isReady: boolean, onFail: () => void }) {
+function SceneContent({
+  activeMaze,
+  nextMaze,
+  transitionPhase,
+  transitionTarget,
+  ballSpawnPosition,
+  ballKey,
+  isReady,
+  controlsEnabled,
+  isFailed,
+  onPortalEnter,
+  onFail,
+  onEnterHandoff,
+  onCompleteTransition,
+  nextMazeOffset,
+}: {
+  activeMaze: MazeDescriptor;
+  nextMaze: MazeDescriptor | null;
+  transitionPhase: TransitionPhase;
+  transitionTarget: [number, number, number] | null;
+  ballSpawnPosition: [number, number, number];
+  ballKey: number;
+  isReady: boolean;
+  controlsEnabled: boolean;
+  isFailed: boolean;
+  onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
+  onFail: () => void;
+  onEnterHandoff: () => void;
+  onCompleteTransition: () => void;
+  nextMazeOffset: [number, number];
+}) {
   const { camera, size } = useThree();
   const targetGravity = useRef<THREE.Vector3>(new THREE.Vector3(0, -30, 0));
-  const boardRef = useRef<THREE.Group>(null);
+  const activeBoardRef = useRef<THREE.Group>(null);
+  const nextBoardRef = useRef<THREE.Group>(null);
   const mobileRotation = useRef({ x: 0, z: 0 });
-  
-  const CELL_SIZE = 1;
-  const width = map[0].length;
-  const height = map.length;
-  
-  const startPos = useMemo(() => {
-    for(let z=0; z<height; z++) {
-        for(let x=0; x<width; x++) {
-            if(map[z][x] === 9) {
-                return [(x - width / 2) * CELL_SIZE + CELL_SIZE / 2, 0.5, (z - height / 2) * CELL_SIZE + CELL_SIZE / 2] as [number, number, number];
-            }
-        }
-    }
-    return [0, 0.5, 0] as [number, number, number];
-  }, [map, width, height]);
+  const ballRef = useRef<RapierRigidBody | null>(null);
+  const transitionHandledRef = useRef(false);
+  const handoffStartedRef = useRef(false);
+  const lastActiveMazePath = useRef(activeMaze.path);
+  const lookTarget = useRef(new THREE.Vector3(0, 0, 0));
 
   useEffect(() => {
-    const aspect = size.width / size.height;
-    const fovRad = (40 * Math.PI) / 180;
-    const padding = 2;
-    const camHeightForVertical = (height + padding) / (2 * Math.tan(fovRad / 2));
-    const camHeightForHorizontal = (width + padding) / (2 * Math.tan(fovRad / 2) * aspect);
-    const finalCamHeight = Math.max(camHeightForVertical, camHeightForHorizontal, 15);
-    camera.position.set(0, finalCamHeight, 0);
-    camera.lookAt(0, 0, 0);
-  }, [camera, size, width, height]);
+    camera.up.set(0, 0, -1);
+  }, [camera]);
 
   useEffect(() => {
     if (!isMobile || !isReady) return;
@@ -75,22 +164,103 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
     return () => window.removeEventListener('devicemotion', handleMotion);
   }, [isReady]);
 
-  useFrame((state) => {
-    if (!isReady) return;
-    if (boardRef.current) {
-        if (!isMobile) {
-            const maxTilt = 15 * (Math.PI / 210);
-            const mouseX = state.pointer.x;
-            const mouseY = state.pointer.y;
-            boardRef.current.rotation.x = THREE.MathUtils.lerp(boardRef.current.rotation.x, -mouseY * maxTilt, 0.05);
-            boardRef.current.rotation.z = THREE.MathUtils.lerp(boardRef.current.rotation.z, -mouseX * maxTilt, 0.05);
-            targetGravity.current.set(mouseX * 15, -30, -mouseY * 15);
-        } else {
-            boardRef.current.rotation.x = THREE.MathUtils.lerp(boardRef.current.rotation.x, mobileRotation.current.x, 0.1);
-            boardRef.current.rotation.z = THREE.MathUtils.lerp(boardRef.current.rotation.z, mobileRotation.current.z, 0.1);
-        }
+  useEffect(() => {
+    transitionHandledRef.current = false;
+    handoffStartedRef.current = false;
+  }, [ballKey]);
+
+  useEffect(() => {
+    if (transitionPhase === 'idle') {
+      transitionHandledRef.current = false;
+      handoffStartedRef.current = false;
     }
-    camera.lookAt(0, 0, 0);
+  }, [transitionPhase]);
+
+  useFrame((state) => {
+    // Detect Maze Swap and teleport camera to avoid jump
+    if (activeMaze.path !== lastActiveMazePath.current) {
+      camera.position.y += DROP_DISTANCE;
+      lookTarget.current.y += DROP_DISTANCE;
+      // Also teleport horizontally to compensate for the maze offset being reset to [0,0]
+      camera.position.x -= nextMazeOffset[0];
+      camera.position.z -= nextMazeOffset[1];
+      lookTarget.current.x -= nextMazeOffset[0];
+      lookTarget.current.z -= nextMazeOffset[1];
+      lastActiveMazePath.current = activeMaze.path;
+    }
+
+    if (activeBoardRef.current) {
+      if (controlsEnabled && !isFailed && isReady) {
+        if (!isMobile) {
+          const maxTilt = 15 * (Math.PI / 210);
+          const mouseX = state.pointer.x;
+          const mouseY = state.pointer.y;
+          activeBoardRef.current.rotation.x = THREE.MathUtils.lerp(activeBoardRef.current.rotation.x, -mouseY * maxTilt, 0.05);
+          activeBoardRef.current.rotation.z = THREE.MathUtils.lerp(activeBoardRef.current.rotation.z, -mouseX * maxTilt, 0.05);
+          targetGravity.current.set(mouseX * 15, -30, -mouseY * 15);
+        } else {
+          activeBoardRef.current.rotation.x = THREE.MathUtils.lerp(activeBoardRef.current.rotation.x, mobileRotation.current.x, 0.1);
+          activeBoardRef.current.rotation.z = THREE.MathUtils.lerp(activeBoardRef.current.rotation.z, mobileRotation.current.z, 0.1);
+        }
+      } else {
+        activeBoardRef.current.rotation.x = THREE.MathUtils.lerp(activeBoardRef.current.rotation.x, 0, 0.08);
+        activeBoardRef.current.rotation.z = THREE.MathUtils.lerp(activeBoardRef.current.rotation.z, 0, 0.08);
+      }
+    }
+
+    if (nextBoardRef.current) {
+      nextBoardRef.current.rotation.x = THREE.MathUtils.lerp(nextBoardRef.current.rotation.x, 0, 0.1);
+      nextBoardRef.current.rotation.z = THREE.MathUtils.lerp(nextBoardRef.current.rotation.z, 0, 0.1);
+    }
+
+    if (ballRef.current && transitionPhase !== 'idle' && transitionTarget) {
+      const ball = ballRef.current;
+      const current = ball.translation();
+      const velocity = ball.linvel();
+
+      if (transitionPhase === 'falling') {
+        const steer = 0.06;
+        const nextX = THREE.MathUtils.lerp(current.x, transitionTarget[0], steer);
+        const nextZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], steer);
+        ball.setTranslation({ x: nextX, y: current.y, z: nextZ }, true);
+        ball.setLinvel({ x: 0, y: Math.min(velocity.y, -8), z: 0 }, true);
+
+        if (!handoffStartedRef.current && current.y <= transitionTarget[1] + 2.5) {
+          handoffStartedRef.current = true;
+          onEnterHandoff();
+        }
+      }
+
+      if (transitionPhase === 'handoff') {
+        const handoffSteer = 0.12;
+        const steerX = THREE.MathUtils.lerp(current.x, transitionTarget[0], handoffSteer);
+        const steerZ = THREE.MathUtils.lerp(current.z, transitionTarget[2], handoffSteer);
+        ball.setTranslation({ x: steerX, y: current.y, z: steerZ }, true);
+        const nearLanding = current.y <= transitionTarget[1] + 0.65;
+        const stable = Math.abs(velocity.y) <= 1.2;
+        if (!transitionHandledRef.current && nearLanding && stable) {
+          transitionHandledRef.current = true;
+          ball.setTranslation({ x: transitionTarget[0], y: transitionTarget[1], z: transitionTarget[2] }, true);
+          ball.setLinvel({ x: 0, y: 0, z: 0 }, true);
+          ball.setAngvel({ x: 0, y: 0, z: 0 }, true);
+          onCompleteTransition();
+        }
+      }
+    }
+
+    if (!ballRef.current) return
+    const cameraTarget = ballRef.current.translation()
+    const lookX = cameraTarget.x;
+    const lookY = cameraTarget.y;
+    const lookZ = cameraTarget.z;
+    
+    // Direct assignment to keep the ball perfectly centered without lag
+    camera.position.x = lookX;
+    camera.position.y = lookY + CAMERA_HEIGHT;
+    camera.position.z = lookZ;
+    
+    lookTarget.current.set(lookX, lookY, lookZ);
+    camera.lookAt(lookTarget.current);
   });
 
   return (
@@ -111,13 +281,25 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
        />
        <pointLight position={[-15, 15, -15]} intensity={1.0} />
 
-       <Physics key={isReady ? 'active' : 'inactive'}>
-         <GravityController targetGravity={targetGravity} isReady={isReady} />
+      <Physics key={isReady ? 'active' : 'inactive'}>
+        <GravityController targetGravity={targetGravity} isReady={isReady} controlsEnabled={controlsEnabled && !isFailed} />
          <Suspense fallback={null}>
-           <group ref={boardRef}>
-             <Maze map={map} onNavigate={onNavigate} onFail={onFail} />
-             {(!isMobile || isReady) && <Ball position={startPos} />} 
+          <group ref={activeBoardRef}>
+            <Maze map={activeMaze.map} mazeId={activeMaze.id} onPortalEnter={onPortalEnter} onFail={onFail} />
+            {(!isMobile || isReady) && (
+              <Ball 
+                key={ballKey} 
+                ref={ballRef} 
+                position={ballSpawnPosition} 
+                restitution={transitionPhase === 'idle' ? 0 : 0.6} 
+              />
+            )}
            </group>
+          {nextMaze && (
+            <group ref={nextBoardRef} position={[nextMazeOffset[0], -DROP_DISTANCE, nextMazeOffset[1]]}>
+              <Maze map={nextMaze.map} mazeId={nextMaze.id} onPortalEnter={() => {}} onFail={() => {}} />
+            </group>
+          )}
          </Suspense>
        </Physics>
 
@@ -130,11 +312,25 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
   );
 }
 
-export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (path: string) => void }) {
+export function GameScene({
+  requestedPath,
+  onPathChange,
+}: {
+  requestedPath: string;
+  onPathChange: (path: string) => void;
+}) {
     const [isReady, setIsReady] = useState(!isMobile);
     const [isLandscape, setIsLandscape] = useState(false);
     const [isFailed, setIsFailed] = useState(false);
-    const [gameKey, setGameKey] = useState(0);
+    const [ballKey, setBallKey] = useState(0);
+    const [activeMaze, setActiveMaze] = useState<MazeDescriptor>(() => mazeFromPath(requestedPath));
+    const [nextMaze, setNextMaze] = useState<MazeDescriptor | null>(null);
+    const [transitionPhase, setTransitionPhase] = useState<TransitionPhase>('idle');
+    const [transitionTarget, setTransitionTarget] = useState<[number, number, number] | null>(null);
+    const [nextMazeOffset, setNextMazeOffset] = useState<[number, number]>([0, 0]);
+
+    const controlsEnabled = isReady && !isFailed && transitionPhase === 'idle';
+    const ballSpawnPosition = useMemo(() => getStartPosition(activeMaze.map), [activeMaze.map]);
 
     useEffect(() => {
         if (!isMobile) return;
@@ -146,9 +342,9 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
 
     const handleInitialTap = async () => {
         if (isReady) return;
-        const DeviceMotionEventAny = (window as any).DeviceMotionEvent;
+        const DeviceMotionEventAny = (window as unknown as { DeviceMotionEvent?: { requestPermission?: () => Promise<'granted' | 'denied'> } }).DeviceMotionEvent;
         if (DeviceMotionEventAny && typeof DeviceMotionEventAny.requestPermission === 'function') {
-            try { await DeviceMotionEventAny.requestPermission(); setIsReady(true); } catch (e) { setIsReady(true); }
+            try { await DeviceMotionEventAny.requestPermission(); setIsReady(true); } catch { setIsReady(true); }
         } else { setIsReady(true); }
     };
 
@@ -158,12 +354,42 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
 
     const handleRetry = useCallback(() => {
         setIsFailed(false);
-        setGameKey(prev => prev + 1);
+        setNextMaze(null);
+        setTransitionPhase('idle');
+        setTransitionTarget(null);
+        setNextMazeOffset([0, 0]);
+        setBallKey((prev) => prev + 1);
     }, []);
 
-    const handleNavigate = useCallback((path: string) => {
-        onNavigate(path);
-    }, [onNavigate]);
+    const handlePortalEnter = useCallback((destinationId: string, entryPosition: [number, number, number]) => {
+      if (transitionPhase !== 'idle' || isFailed) return;
+      const destination = mazeFromDestination(destinationId);
+      const targetStartLocal = getStartPosition(destination.map, 0);
+      
+      // Calculate offset to align the next maze's start with current ball position
+      const offsetX = entryPosition[0] - targetStartLocal[0];
+      const offsetZ = entryPosition[2] - targetStartLocal[2];
+      
+      setNextMaze(destination);
+      setNextMazeOffset([offsetX, offsetZ]);
+      setTransitionTarget([entryPosition[0], -DROP_DISTANCE + 0.5, entryPosition[2]]);
+      setTransitionPhase('falling');
+    }, [transitionPhase, isFailed]);
+
+    const handleEnterHandoff = useCallback(() => {
+      setTransitionPhase('handoff');
+    }, []);
+
+    const handleCompleteTransition = useCallback(() => {
+      if (!nextMaze) return;
+      setActiveMaze(nextMaze);
+      setNextMaze(null);
+      setTransitionTarget(null);
+      setTransitionPhase('idle');
+      setIsFailed(false);
+      setBallKey((prev) => prev + 1);
+      onPathChange(nextMaze.path);
+    }, [nextMaze, onPathChange]);
 
     return (
         <div onClick={handleInitialTap} style={{ position: 'fixed', inset: 0, width: '100dvw', height: '100dvh', background: '#111', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -191,14 +417,29 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
           )}
 
           <Canvas 
-            key={gameKey} 
+            key={'camera'}
             shadows 
             gl={{ antialias: true }}
             camera={{ position: [0, 25, 0], fov: 40 }} 
             dpr={[1, 2]}
           >
               <color attach="background" args={['#1a1a1a']} />
-              <SceneContent map={map} onNavigate={handleNavigate} isReady={isReady} onFail={handleFail} />
+              <SceneContent
+                activeMaze={activeMaze}
+                nextMaze={nextMaze}
+                transitionPhase={transitionPhase}
+                transitionTarget={transitionTarget}
+                ballSpawnPosition={ballSpawnPosition}
+                ballKey={ballKey}
+                isReady={isReady}
+                controlsEnabled={controlsEnabled}
+                isFailed={isFailed}
+                onPortalEnter={handlePortalEnter}
+                onFail={handleFail}
+                onEnterHandoff={handleEnterHandoff}
+                onCompleteTransition={handleCompleteTransition}
+                nextMazeOffset={nextMazeOffset}
+              />
           </Canvas>
         </div>
     )

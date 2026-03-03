@@ -5,13 +5,13 @@ import * as THREE from 'three';
 
 interface HoleProps {
   position: [number, number, number];
-  to: string;
-  onEnter: (path: string) => void;
+  destinationId: string;
+  onEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
   label?: string;
   color?: string;
 }
 
-export function Hole({ position, to, onEnter, label, color = "#00ccff" }: HoleProps) {
+export function Hole({ position, destinationId, onEnter, label, color = "#00ccff" }: HoleProps) {
   const floorShape = useMemo(() => {
     const shape = new THREE.Shape();
     shape.moveTo(-0.5, -0.5);
@@ -70,7 +70,11 @@ export function Hole({ position, to, onEnter, label, color = "#00ccff" }: HolePr
           sensor 
           onIntersectionEnter={({ other }) => {
             if (other.rigidBodyObject?.name === "ball") {
-              onEnter(to);
+              const rb = other.rigidBody;
+              if (rb) {
+                const translation = rb.translation();
+                onEnter(destinationId, [translation.x, translation.y, translation.z]);
+              }
             }
           }}
         />

@@ -2,11 +2,13 @@ import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { Hole } from './Hole';
 import { Trap } from './Trap';
 import { useMemo, useRef, useLayoutEffect, memo } from 'react';
+import type { ReactElement } from 'react';
 import * as THREE from 'three';
 
 interface MazeProps {
   map: number[][];
-  onNavigate: (path: string) => void;
+  mazeId: string;
+  onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
   onFail?: () => void;
 }
 
@@ -23,7 +25,7 @@ const PORTAL_COLORS: Record<string, string> = {
     BACK: "#ffffff"
 };
 
-export const Maze = memo(function Maze({ map, onNavigate, onFail = () => {} }: MazeProps) {
+export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = () => {} }: MazeProps) {
   const wallMeshRef = useRef<THREE.InstancedMesh>(null);
   const floorMeshRef = useRef<THREE.InstancedMesh>(null);
 
@@ -44,7 +46,7 @@ export const Maze = memo(function Maze({ map, onNavigate, onFail = () => {} }: M
     });
 
     const getMergedColliders = (types: number[]) => {
-      const colliders: any[] = [];
+      const colliders: { pos: [number, number, number]; args: [number, number, number] }[] = [];
       const visited = Array(height).fill(0).map(() => Array(width).fill(false));
       for (let z = 0; z < height; z++) {
         for (let x = 0; x < width; x++) {
@@ -87,8 +89,8 @@ export const Maze = memo(function Maze({ map, onNavigate, onFail = () => {} }: M
       </>
     );
 
-    const holes: any[] = [];
-    const traps: any[] = [];
+    const holes: ReactElement[] = [];
+    const traps: ReactElement[] = [];
     map.forEach((row, z) => {
       row.forEach((cell, x) => {
         const cx = (x - width / 2) * CELL_SIZE + CELL_SIZE / 2;
@@ -97,29 +99,32 @@ export const Maze = memo(function Maze({ map, onNavigate, onFail = () => {} }: M
         if (cell === 6) {
           traps.push(<Trap key={`t-${x}-${z}`} position={[cx, 0, cz]} onFail={onFail} />);
         } else if (cell >= 2 && cell <= 5) {
-          let route = "/"; let label = "";
-          if (cell === 2) { route = "/projects"; label = "PROJECTS"; }
-          if (cell === 3) { route = "/skills"; label = "SKILLS"; }
-          if (cell === 4) { route = "/contact"; label = "CONTACT"; }
-          if (cell === 5) {
-            const randomSeed = Math.random().toString(36).substring(7);
-            route = `/endless/${randomSeed}`;
-            label = window.location.pathname.startsWith("/endless/") ? "NEXT" : "ENDLESS";
-          }
-          if (width === 10) { 
-              if (cell === 2) { route = "/"; label = "BACK"; }
-              if (cell === 3) { route = "/contact"; label = "CONTACT"; }
-          }
-          if (window.location.pathname.startsWith("/endless/")) {
-              if (cell === 2) { route = "/"; label = "HOME"; }
-          }
+          const portalByCell: Record<string, Record<number, string>> = {
+            home: { 2: "projects", 3: "skills", 4: "contact", 5: "endless" },
+            projects: { 2: "home", 3: "contact" },
+            skills: { 2: "home", 4: "contact", 5: "endless" },
+            contact: { 2: "home", 3: "skills", 5: "endless" },
+            endless: { 2: "home", 5: "endless" },
+          };
+
+          const labelByDestination: Record<string, string> = {
+            projects: mazeId === "home" ? "PROJECTS" : "PROJECTS",
+            skills: "SKILLS",
+            contact: "CONTACT",
+            endless: mazeId === "endless" ? "NEXT" : "ENDLESS",
+            home: mazeId === "home" ? "HOME" : "BACK",
+          };
+
+          const destinationId = portalByCell[mazeId]?.[cell];
+          if (!destinationId) return;
+          const label = labelByDestination[destinationId] ?? "PORTAL";
           
           holes.push(
             <Hole 
                 key={`h-${x}-${z}`} 
                 position={[cx, 0, cz]} 
-                to={route} 
-                onEnter={onNavigate} 
+                destinationId={destinationId} 
+                onEnter={onPortalEnter} 
                 label={label} 
                 color={PORTAL_COLORS[label] || "#ffffff"}
             />
@@ -129,7 +134,7 @@ export const Maze = memo(function Maze({ map, onNavigate, onFail = () => {} }: M
     });
 
     return { wallVisuals: wallV, floorVisuals: floorV, collidersJSX: colliders, holesJSX: holes, trapsJSX: traps };
-  }, [map, width, height, onNavigate, onFail]);
+  }, [map, width, height, mazeId, onPortalEnter, onFail]);
 
   useLayoutEffect(() => {
     const temp = new THREE.Object3D();
@@ -154,12 +159,29 @@ export const Maze = memo(function Maze({ map, onNavigate, onFail = () => {} }: M
 
   return (
     <group>
-      <instancedMesh ref={wallMeshRef} args={[null as any, null as any, wallVisuals.length]} castShadow receiveShadow>
+      <instancedMesh
+        ref={wallMeshRef}
+        args={[
+          undefined as unknown as THREE.BufferGeometry,
+          undefined as unknown as THREE.Material,
+          wallVisuals.length,
+        ]}
+        castShadow
+        receiveShadow
+      >
         <boxGeometry args={[CELL_SIZE, WALL_HEIGHT, CELL_SIZE]} />
         <meshStandardMaterial color="#444444" metalness={0.2} roughness={0.8} />
       </instancedMesh>
 
-      <instancedMesh ref={floorMeshRef} args={[null as any, null as any, floorVisuals.length]} receiveShadow>
+      <instancedMesh
+        ref={floorMeshRef}
+        args={[
+          undefined as unknown as THREE.BufferGeometry,
+          undefined as unknown as THREE.Material,
+          floorVisuals.length,
+        ]}
+        receiveShadow
+      >
         <planeGeometry args={[CELL_SIZE, CELL_SIZE]} />
         <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} />
       </instancedMesh>
