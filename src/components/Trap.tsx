@@ -6,12 +6,13 @@ import * as THREE from 'three';
 interface TrapProps {
   position: [number, number, number];
   onFail: (entryPosition: [number, number, number]) => void;
+  opacity?: number;
 }
 
 const NEON_BLUE = new THREE.Color("#00ccff");
 const RED_ORANGE = new THREE.Color("#ff4400");
 
-export function Trap({ position, onFail }: TrapProps) {
+export function Trap({ position, onFail, opacity = 1 }: TrapProps) {
   const [isPhysicsOpen, setIsPhysicsOpen] = useState(false);
   const trapPosVec = useMemo(() => new THREE.Vector3(...position), [position]);
   
@@ -65,13 +66,14 @@ export function Trap({ position, onFail }: TrapProps) {
         doorRef.current.position.y = -0.05 - (t * 0.85);
     }
     if (doorMatRef.current) {
-        doorMatRef.current.opacity = 1 - (t * 0.4);
+        doorMatRef.current.opacity = (1 - (t * 0.4)) * opacity;
         doorMatRef.current.color.set(isOpen ? "#333333" : "#cccccc");
     }
 
     // 2. Update Border Visuals
     if (borderMatRef.current) {
         borderMatRef.current.color.copy(NEON_BLUE).lerp(RED_ORANGE, t);
+        borderMatRef.current.opacity = opacity;
     }
     if (borderRef.current) {
         const pulse = isOpen ? Math.sin(Date.now() * 0.01) * 0.2 + 0.8 : 1;
@@ -108,13 +110,13 @@ export function Trap({ position, onFail }: TrapProps) {
       {/* Surrounding Floor Tile with Hole */}
       <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, 0]} receiveShadow>
         <shapeGeometry args={[floorShape]} />
-        <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} />
+        <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} transparent opacity={opacity} />
       </mesh>
 
       {/* Deep Hole Visual */}
       <mesh position={[0, -0.6, 0]} receiveShadow>
         <cylinderGeometry args={[0.48, 0.48, 1, 32]} />
-        <meshStandardMaterial color="#000000" roughness={1} />
+        <meshStandardMaterial color="#000000" roughness={1} transparent opacity={opacity} />
       </mesh>
 
       {/* Trap Door Visual */}
@@ -126,13 +128,14 @@ export function Trap({ position, onFail }: TrapProps) {
           metalness={0.4} 
           roughness={0.6} 
           transparent
+          opacity={opacity}
         />
       </mesh>
 
       {/* Glowing Border */}
       <mesh ref={borderRef} position={[0, 0.01, 0]} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[0.44, 0.52, 32]} />
-        <meshBasicMaterial ref={borderMatRef} color={NEON_BLUE} toneMapped={false} />
+        <meshBasicMaterial ref={borderMatRef} color={NEON_BLUE} toneMapped={false} transparent opacity={opacity} />
       </mesh>
 
       {/* Physics: Main floor collider - Solid fixed body when closed, unmounted when open */}

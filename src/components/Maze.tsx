@@ -10,6 +10,7 @@ interface MazeProps {
   mazeId: string;
   onPortalEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
   onFail?: (entryPosition: [number, number, number]) => void;
+  opacity?: number;
 }
 
 const CELL_SIZE = 1;
@@ -25,7 +26,7 @@ const PORTAL_COLORS: Record<string, string> = {
     RETRY: "#ff4400"
 };
 
-export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = () => {} }: MazeProps) {
+export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = () => {}, opacity = 1 }: MazeProps) {
   const wallMeshRef = useRef<THREE.InstancedMesh>(null);
   const floorMeshRef = useRef<THREE.InstancedMesh>(null);
 
@@ -97,7 +98,7 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
         const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
 
         if (cell === 6) {
-          traps.push(<Trap key={`t-${x}-${z}`} position={[cx, 0, cz]} onFail={onFail} />);
+          traps.push(<Trap key={`t-${x}-${z}`} position={[cx, 0, cz]} onFail={onFail} opacity={opacity} />);
         } else if (cell >= 2 && cell <= 5) {
           const portalByCell: Record<string, Record<number, string>> = {
             home: { 2: "projects", 3: "skills", 4: "contact", 5: "endless" },
@@ -129,6 +130,7 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
                 onEnter={onPortalEnter} 
                 label={label} 
                 color={PORTAL_COLORS[label] || "#ffffff"}
+                opacity={opacity}
             />
           );
         }
@@ -136,7 +138,7 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
     });
 
     return { wallVisuals: wallV, floorVisuals: floorV, collidersJSX: colliders, holesJSX: holes, trapsJSX: traps };
-  }, [map, width, height, mazeId, onPortalEnter, onFail]);
+  }, [map, width, height, mazeId, onPortalEnter, onFail, opacity]);
 
   useLayoutEffect(() => {
     const temp = new THREE.Object3D();
@@ -172,7 +174,7 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
         receiveShadow
       >
         <boxGeometry args={[CELL_SIZE, WALL_HEIGHT, CELL_SIZE]} />
-        <meshStandardMaterial color="#444444" metalness={0.2} roughness={0.8} />
+        <meshStandardMaterial color="#444444" metalness={0.2} roughness={0.8} transparent opacity={opacity} />
       </instancedMesh>
 
       <instancedMesh
@@ -185,7 +187,7 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
         receiveShadow
       >
         <planeGeometry args={[CELL_SIZE, CELL_SIZE]} />
-        <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} />
+        <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} transparent opacity={opacity} />
       </instancedMesh>
 
       {collidersJSX}

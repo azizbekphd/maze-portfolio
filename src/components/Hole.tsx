@@ -9,9 +9,10 @@ interface HoleProps {
   onEnter: (destinationId: string, entryPosition: [number, number, number]) => void;
   label?: string;
   color?: string;
+  opacity?: number;
 }
 
-export function Hole({ position, destinationId, onEnter, label, color = "#00ccff" }: HoleProps) {
+export function Hole({ position, destinationId, onEnter, label, color = "#00ccff", opacity = 1 }: HoleProps) {
   const floorShape = useMemo(() => {
     const shape = new THREE.Shape();
     shape.moveTo(-0.5, -0.5);
@@ -31,19 +32,19 @@ export function Hole({ position, destinationId, onEnter, label, color = "#00ccff
       {/* Surrounding Floor Tile with Hole */}
       <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, 0]} receiveShadow>
         <shapeGeometry args={[floorShape]} />
-        <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} />
+        <meshStandardMaterial color="#ffffff" metalness={0.1} roughness={0.9} transparent opacity={opacity} />
       </mesh>
 
       {/* Deep Hole Visual */}
       <mesh position={[0, -0.5, 0]} receiveShadow>
         <cylinderGeometry args={[0.4, 0.4, 1, 32]} />
-        <meshStandardMaterial color="#000000" roughness={1} />
+        <meshStandardMaterial color="#000000" roughness={1} transparent opacity={opacity} />
       </mesh>
 
       {/* Glowing Ring Rim */}
       <mesh position={[0, 0.01, 0]} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[0.38, 0.45, 32]} />
-        <meshBasicMaterial color={color} toneMapped={false} />
+        <meshBasicMaterial color={color} toneMapped={false} transparent opacity={opacity} />
       </mesh>
       
       {label && (
@@ -55,9 +56,10 @@ export function Hole({ position, destinationId, onEnter, label, color = "#00ccff
           anchorY="middle"
           rotation={[-Math.PI / 2, 0, 0]}
           font="/fonts/RobotoMono.ttf"
+          fillOpacity={opacity}
         >
           {label}
-          <meshBasicMaterial attach="material" color={color} toneMapped={false} />
+          <meshBasicMaterial attach="material" color={color} toneMapped={false} transparent opacity={opacity} />
         </Text>
       )}
       

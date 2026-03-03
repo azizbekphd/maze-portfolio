@@ -141,6 +141,8 @@ function SceneContent({
   const targetGravity = useRef<THREE.Vector3>(new THREE.Vector3(0, -30, 0));
   const activeBoardRef = useRef<THREE.Group>(null);
   const nextBoardRef = useRef<THREE.Group>(null);
+  const [activeOpacity, setActiveOpacity] = useState(1);
+  const [nextOpacity, setNextOpacity] = useState(0);
   const mobileRotation = useRef({ x: 0, z: 0 });
   const ballRef = useRef<RapierRigidBody | null>(null);
   const transitionHandledRef = useRef(false);
@@ -182,6 +184,8 @@ function SceneContent({
     if (transitionPhase === 'idle') {
       transitionHandledRef.current = false;
       handoffStartedRef.current = false;
+      setActiveOpacity(1);
+      setNextOpacity(0);
     }
   }, [transitionPhase]);
 
@@ -226,6 +230,17 @@ function SceneContent({
       const ball = ballRef.current;
       const current = ball.translation();
       const velocity = ball.linvel();
+
+      // Fade transitions based on ball height
+      // Active maze fades out as ball drops from 0 to -10
+      const aOpacity = THREE.MathUtils.clamp(1 + current.y / 10, 0, 1);
+      if (activeOpacity !== aOpacity) setActiveOpacity(aOpacity);
+
+      // Next maze fades in as ball approaches transitionTarget.y
+      // transitionTarget.y is roughly -DROP_DISTANCE + 0.5
+      const distToTarget = Math.abs(current.y - transitionTarget[1]);
+      const nOpacity = THREE.MathUtils.clamp(1 - distToTarget / 15, 0, 1);
+      if (nextOpacity !== nOpacity) setNextOpacity(nOpacity);
 
       if (transitionPhase === 'falling') {
         const steer = 0.08;
@@ -306,7 +321,13 @@ function SceneContent({
         />
          <Suspense fallback={null}>
           <group ref={activeBoardRef}>
-            <Maze map={activeMaze.map} mazeId={activeMaze.id} onPortalEnter={onPortalEnter} onFail={onFail} />
+            <Maze 
+              map={activeMaze.map} 
+              mazeId={activeMaze.id} 
+              onPortalEnter={onPortalEnter} 
+              onFail={onFail} 
+              opacity={transitionPhase === 'idle' ? 1 : activeOpacity}
+            />
             {(!isMobile || isReady) && (
               <Ball 
                 key={ballKey} 
@@ -318,7 +339,13 @@ function SceneContent({
            </group>
           {nextMaze && (
             <group ref={nextBoardRef} position={[nextMazeOffset[0], -DROP_DISTANCE, nextMazeOffset[1]]}>
-              <Maze map={nextMaze.map} mazeId={nextMaze.id} onPortalEnter={() => {}} onFail={() => {}} />
+              <Maze 
+                map={nextMaze.map} 
+                mazeId={nextMaze.id} 
+                onPortalEnter={() => {}} 
+                onFail={() => {}} 
+                opacity={transitionPhase === 'idle' ? 0 : nextOpacity}
+              />
             </group>
           )}
          </Suspense>
