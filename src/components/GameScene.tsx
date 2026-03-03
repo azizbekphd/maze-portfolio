@@ -105,7 +105,7 @@ function SceneContent({ map, onNavigate, isReady, onFail }: { map: number[][], o
          </Suspense>
        </Physics>
 
-       <EffectComposer disableNormalPass multisampling={8}>
+       <EffectComposer enableNormalPass={false} multisampling={8}>
          <Bloom luminanceThreshold={1} luminanceSmoothing={0.9} height={300} intensity={1.5} />
          <Noise opacity={0.02} />
          <Vignette eskil={false} offset={0.1} darkness={1.1} />
@@ -173,7 +173,7 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
           <Canvas 
             key={gameKey} 
             shadows 
-            gl={{ antialias: true, shadowMapType: THREE.PCFSoftShadowMap }}
+            gl={{ antialias: true }}
             camera={{ position: [0, 25, 0], fov: 40 }} 
             dpr={[1, 2]}
           >

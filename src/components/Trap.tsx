@@ -1,5 +1,5 @@
 import { RigidBody, CylinderCollider, CuboidCollider, useRapier } from '@react-three/rapier';
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -37,7 +37,7 @@ export function Trap({ position, onFail }: TrapProps) {
   }, []);
 
   // Handle visual transition and suction
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     const speed = 4.0;
     if (isOpen && transitionProgress < 1) {
       setTransitionProgress(prev => Math.min(1, prev + delta * speed));
