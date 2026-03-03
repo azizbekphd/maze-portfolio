@@ -7,12 +7,13 @@ interface TrapProps {
   position: [number, number, number];
   onFail: (entryPosition: [number, number, number]) => void;
   opacity?: number;
+  slideDirection?: { x: number; z: number };
 }
 
 const NEON_BLUE = new THREE.Color("#00ccff");
 const RED_ORANGE = new THREE.Color("#ff4400");
 
-export function Trap({ position, onFail, opacity = 1 }: TrapProps) {
+export function Trap({ position, onFail, opacity = 1, slideDirection = { x: 0, z: -1 } }: TrapProps) {
   const [isPhysicsOpen, setIsPhysicsOpen] = useState(false);
   const trapPosVec = useMemo(() => new THREE.Vector3(...position), [position]);
   
@@ -63,7 +64,11 @@ export function Trap({ position, onFail, opacity = 1 }: TrapProps) {
 
     // 1. Update Door Visuals (Directly via refs)
     if (doorRef.current) {
-        doorRef.current.position.y = -0.05 - (t * 0.85);
+        // Slide horizontally instead of down
+        doorRef.current.position.x = slideDirection.x * t * 0.9;
+        doorRef.current.position.z = slideDirection.z * t * 0.9;
+        // Slightly lower it so it doesn't clip if sliding under something very close to floor
+        doorRef.current.position.y = -0.05 - (t * 0.05);
     }
     if (doorMatRef.current) {
         doorMatRef.current.opacity = (1 - (t * 0.4)) * opacity;

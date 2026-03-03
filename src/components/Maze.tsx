@@ -98,7 +98,25 @@ export const Maze = memo(function Maze({ map, mazeId, onPortalEnter, onFail = ()
         const cz = (z - height / 2) * CELL_SIZE + CELL_SIZE / 2;
 
         if (cell === 6) {
-          traps.push(<Trap key={`t-${x}-${z}`} position={[cx, 0, cz]} onFail={onFail} opacity={opacity} />);
+          // Find closest wall for sliding direction
+          const neighbors = [
+            { dx: 0, dz: -1 }, // North
+            { dx: 0, dz: 1 },  // South
+            { dx: 1, dz: 0 },  // East
+            { dx: -1, dz: 0 }  // West
+          ];
+          let slideDir = { x: 0, z: -1 };
+          for (const { dx, dz } of neighbors) {
+            const nx = x + dx;
+            const nz = z + dz;
+            if (nz >= 0 && nz < map.length && nx >= 0 && nx < map[0].length) {
+              if (map[nz][nx] === 1) {
+                slideDir = { x: dx, z: dz };
+                break;
+              }
+            }
+          }
+          traps.push(<Trap key={`t-${x}-${z}`} position={[cx, 0, cz]} onFail={onFail} opacity={opacity} slideDirection={slideDir} />);
         } else if (cell >= 2 && cell <= 5) {
           const portalByCell: Record<string, Record<number, string>> = {
             home: { 2: "projects", 3: "skills", 4: "contact", 5: "endless" },
