@@ -158,10 +158,10 @@ export function GameScene({ map, onNavigate }: { map: number[][], onNavigate: (p
           )}
 
           {isFailed && (
-            <div style={{ position: 'absolute', inset: 0, zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(5px)' }}>
-                <div style={{ background: '#222', padding: '40px', borderRadius: '20px', border: '2px solid #ff4400', textAlign: 'center', color: 'white', fontFamily: 'sans-serif', boxShadow: '0 0 50px rgba(255,68,0,0.4)' }}>
-                    <h2 style={{ fontSize: '2rem', marginBottom: '10px', color: '#ff4400' }}>MISSION FAILED</h2>
-                    <p style={{ opacity: 0.8, marginBottom: '30px' }}>The ball fell into a trap!</p>
+            <div style={{ position: 'absolute', inset: 0, zIndex: 1000, display: 'flex', justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.3)', backdropFilter: 'blur(30px)' }}>
+                <div style={{ padding: '40px', borderRadius: '20px', textAlign: 'center', color: 'white', fontFamily: 'sans-serif' }}>
+                    <h2 style={{ fontSize: '2rem', marginBottom: '10px', color: '#ff4400' }}>FAIL</h2>
+                    <p style={{ opacity: 0.8, marginBottom: '30px' }}>The ball fell into a trap</p>
                     <button 
                         onClick={(e) => { e.stopPropagation(); handleRetry(); }}
                         style={{ background: '#ff4400', color: 'white', border: 'none', padding: '12px 30px', borderRadius: '50px', fontSize: '1.1rem', fontWeight: 'bold', cursor: 'pointer', transition: 'all 0.2s' }}
