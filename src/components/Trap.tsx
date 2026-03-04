@@ -12,6 +12,8 @@ interface TrapProps {
 
 const NEON_BLUE = new THREE.Color("#00ccff");
 const RED_ORANGE = new THREE.Color("#ff4400");
+const TRAP_DOOR = new THREE.Color("cccccc");
+const FLOOR = new THREE.Color("#ffffff");
 
 export function Trap({ position, onFail, opacity = 1, slideDirection = { x: 0, z: -1 } }: TrapProps) {
   const [isPhysicsOpen, setIsPhysicsOpen] = useState(false);
@@ -72,7 +74,6 @@ export function Trap({ position, onFail, opacity = 1, slideDirection = { x: 0, z
     }
     if (doorMatRef.current) {
         doorMatRef.current.opacity = (1 - (t * 0.4)) * opacity;
-        doorMatRef.current.color.set(isOpen ? "#333333" : "#cccccc");
     }
 
     // 2. Update Border Visuals
@@ -129,7 +130,7 @@ export function Trap({ position, onFail, opacity = 1, slideDirection = { x: 0, z
         <cylinderGeometry args={[0.44, 0.44, 0.05, 32]} />
         <meshStandardMaterial 
           ref={doorMatRef}
-          color="#ccc" 
+          color="#ffffff" 
           metalness={0.4} 
           roughness={0.6} 
           transparent
