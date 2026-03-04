@@ -10,7 +10,7 @@ class SquirrelRandom {
   }
 }
 
-export function generateMaze(seedStr: string, size = 20): number[][] {
+export function generateMaze(seedStr: string, size = 21): number[][] {
   let seedNum = 0;
   for (let i = 0; i < seedStr.length; i++) {
     seedNum = (seedNum << 5) - seedNum + seedStr.charCodeAt(i);
